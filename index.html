@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>周期预算日历</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#111827" />
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f5;
+      color: #111827;
+    }
+
+    .app {
+      max-width: 520px;
+      margin: 0 auto;
+      min-height: 100vh;
+      padding: 16px;
+      background: #ffffff;
+    }
+
+    h1 {
+      margin: 8px 0 16px;
+      font-size: 24px;
+      text-align: center;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      background: #f3f4f6;
+      border-radius: 14px;
+      padding: 14px;
+    }
+
+    .card.full {
+      grid-column: span 2;
+    }
+
+    .label {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 6px;
+    }
+
+    .value {
+      font-size: 22px;
+      font-weight: 700;
+    }
+
+    .period {
+      font-size: 14px;
+      color: #374151;
+      text-align: center;
+      margin-bottom: 16px;
+    }
+
+    .calendar {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 8px;
+    }
+
+    .weekday {
+      text-align: center;
+      font-size: 13px;
+      color: #6b7280;
+      padding-bottom: 4px;
+    }
+
+    .day {
+      border: none;
+      border-radius: 14px;
+      padding: 10px 4px;
+      min-height: 72px;
+      background: #f9fafb;
+      color: #111827;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    .day.today {
+      background: #111827;
+      color: white;
+    }
+
+    .day .amount {
+      display: block;
+      margin-top: 8px;
+      font-size: 12px;
+      opacity: 0.8;
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      margin-top: 18px;
+    }
+
+    button.action {
+      flex: 1;
+      border: none;
+      border-radius: 12px;
+      padding: 12px;
+      background: #111827;
+      color: white;
+      font-size: 15px;
+    }
+
+    button.secondary {
+      background: #e5e7eb;
+      color: #111827;
+    }
+
+    .hint {
+      margin-top: 18px;
+      color: #6b7280;
+      font-size: 13px;
+      line-height: 1.6;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <h1>周期预算日历</h1>
+
+    <div class="period" id="periodText"></div>
+
+    <div class="summary">
+      <div class="card">
+        <div class="label">周期总预算</div>
+        <div class="value" id="totalBudget">¥1050</div>
+      </div>
+
+      <div class="card">
+        <div class="label">已花费</div>
+        <div class="value" id="spentAmount">¥0</div>
+      </div>
+
+      <div class="card">
+        <div class="label">剩余金额</div>
+        <div class="value" id="remainingAmount">¥1050</div>
+      </div>
+
+      <div class="card">
+        <div class="label">剩余天数</div>
+        <div class="value" id="remainingDays">7</div>
+      </div>
+
+      <div class="card full">
+        <div class="label">接下来每日个人可用额度</div>
+        <div class="value" id="dailyPersonalBudget">¥75</div>
+      </div>
+    </div>
+
+    <div class="calendar" id="calendar"></div>
+
+    <div class="actions">
+      <button class="action secondary" onclick="changeWeek(-1)">上一周期</button>
+      <button class="action" onclick="goCurrentWeek()">本周期</button>
+      <button class="action secondary" onclick="changeWeek(1)">下一周期</button>
+    </div>
+
+    <div class="hint">
+      点击任意日期输入当天花费。<br />
+      周期为每周二到下周一；总预算为 75 × 7 × 2 = 1050 元。
+    </div>
+  </div>
+
+  <script>
+    const TOTAL_BUDGET = 75 * 7 * 2;
+    let weekOffset = 0;
+
+    function formatDate(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function displayDate(date) {
+      return `${date.getMonth() + 1}/${date.getDate()}`;
+    }
+
+    function getTuesdayStart(baseDate) {
+      const date = new Date(baseDate);
+      date.setHours(0, 0, 0, 0);
+
+      const day = date.getDay();
+      const diff = day >= 2 ? day - 2 : day + 5;
+      date.setDate(date.getDate() - diff);
+      return date;
+    }
+
+    function addDays(date, days) {
+      const d = new Date(date);
+      d.setDate(d.getDate() + days);
+      return d;
+    }
+
+    function getCurrentPeriodStart() {
+      const today = new Date();
+      const start = getTuesdayStart(today);
+      start.setDate(start.getDate() + weekOffset * 7);
+      return start;
+    }
+
+    function getExpenses() {
+      return JSON.parse(localStorage.getItem("budgetExpenses") || "{}");
+    }
+
+    function saveExpenses(expenses) {
+      localStorage.setItem("budgetExpenses", JSON.stringify(expenses));
+    }
+
+    function yuan(num) {
+      return "¥" + Number(num).toFixed(2).replace(/\.00$/, "");
+    }
+
+    function getRemainingDays(periodStart) {
+      const now = new Date();
+      const today = new Date(now);
+      today.setHours(0, 0, 0, 0);
+
+      const periodEnd = addDays(periodStart, 6);
+      periodEnd.setHours(23, 59, 59, 999);
+
+      if (now > periodEnd) return 0;
+      if (today < periodStart) return 7;
+
+      const diff = Math.floor((periodEnd - today) / (1000 * 60 * 60 * 24)) + 1;
+      return Math.max(diff, 0);
+    }
+
+    function render() {
+      const calendar = document.getElementById("calendar");
+      calendar.innerHTML = "";
+
+      const start = getCurrentPeriodStart();
+      const end = addDays(start, 6);
+      const expenses = getExpenses();
+
+      document.getElementById("periodText").textContent =
+        `${formatDate(start)} 至 ${formatDate(end)}`;
+
+      const weekdays = ["二", "三", "四", "五", "六", "日", "一"];
+      weekdays.forEach(w => {
+        const div = document.createElement("div");
+        div.className = "weekday";
+        div.textContent = w;
+        calendar.appendChild(div);
+      });
+
+      let spent = 0;
+      const todayKey = formatDate(new Date());
+
+      for (let i = 0; i < 7; i++) {
+        const date = addDays(start, i);
+        const key = formatDate(date);
+        const amount = Number(expenses[key] || 0);
+        spent += amount;
+
+        const btn = document.createElement("button");
+        btn.className = "day" + (key === todayKey ? " today" : "");
+        btn.innerHTML = `
+          <strong>${displayDate(date)}</strong>
+          <span class="amount">${amount ? yuan(amount) : "未记录"}</span>
+        `;
+        btn.onclick = () => editExpense(key, amount);
+        calendar.appendChild(btn);
+      }
+
+      const remaining = TOTAL_BUDGET - spent;
+      const remainingDays = getRemainingDays(start);
+      const dailyPersonal =
+        remainingDays > 0 ? remaining / (2 * remainingDays) : 0;
+
+      document.getElementById("totalBudget").textContent = yuan(TOTAL_BUDGET);
+      document.getElementById("spentAmount").textContent = yuan(spent);
+      document.getElementById("remainingAmount").textContent = yuan(remaining);
+      document.getElementById("remainingDays").textContent = remainingDays;
+      document.getElementById("dailyPersonalBudget").textContent =
+        yuan(dailyPersonal);
+    }
+
+    function editExpense(dateKey, currentAmount) {
+      const input = prompt(`请输入 ${dateKey} 的花费金额`, currentAmount || "");
+      if (input === null) return;
+
+      const amount = Number(input);
+      if (isNaN(amount) || amount < 0) {
+        alert("请输入有效的非负数字");
+        return;
+      }
+
+      const expenses = getExpenses();
+
+      if (amount === 0) {
+        delete expenses[dateKey];
+      } else {
+        expenses[dateKey] = amount;
+      }
+
+      saveExpenses(expenses);
+      render();
+    }
+
+    function changeWeek(step) {
+      weekOffset += step;
+      render();
+    }
+
+    function goCurrentWeek() {
+      weekOffset = 0;
+      render();
+    }
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("service-worker.js");
+    }
+
+    render();
+  </script>
+</body>
+</html>
